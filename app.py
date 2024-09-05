@@ -66,6 +66,93 @@ def t_error(t):
 
 lexer = lex.lex()
 
+# Definição do Autômato Finito Determinístico (AFD)
+class AFD:
+    def __init__(self):
+        self.estados = ['q0', 'q1', 'q2', 'q3', 'q4', 'q5']
+        self.estado_atual = 'q0'
+        self.transicoes = {
+            'q0': {'digito': 'q1', 'letra': 'q2', 'op': 'q3', 'espaco': 'q0', 'aspas': 'q4', 'comp': 'q5'},
+            'q1': {'digito': 'q1', 'op': 'q3', 'espaco': 'q0'},  # Estado para números
+            'q2': {'letra': 'q2', 'digito': 'q2', 'op': 'q3', 'espaco': 'q0', 'aspas': 'q4'},  # Estado para variáveis e identificadores
+            'q3': {'letra': 'q2', 'digito': 'q1', 'op': 'q3', 'espaco': 'q0', 'aspas': 'q4'},  # Estado para operadores
+            'q4': {'aspas': 'q0', 'caractere': 'q4'},  # Estado de leitura da string, aceita qualquer caractere exceto aspas de fechamento
+            'q5': {'espaco': 'q0', 'op': 'q3', 'letra': 'q2', 'digito': 'q1', 'RPAREN': 'q0'}  # Estado para fechamento da string e inclusão de parênteses
+        }
+        self.estados_finais = ['q1', 'q2', 'q3', 'q4', 'q5']
+
+    def transicao(self, caractere):
+        """ Faz a transição do estado baseado no caractere de entrada. """
+        if self.estado_atual == 'q4':
+            tipo_caractere = 'caractere'  # Qualquer caractere dentro de uma string (exceto aspas de fechamento)
+        else:
+            if caractere.isdigit():
+                tipo_caractere = 'digito'
+            elif caractere.isalpha():
+                tipo_caractere = 'letra'
+            elif caractere in "+-*/=(){}:":
+                tipo_caractere = 'op'
+            elif caractere in "\"'":
+                tipo_caractere = 'aspas'
+            elif caractere in "<>!=":
+                tipo_caractere = 'comp'
+            elif caractere in " \t\n":
+                tipo_caractere = 'espaco'
+            else:
+                tipo_caractere = 'caractere'
+
+        # Verificação da transição
+        if self.estado_atual in self.transicoes and tipo_caractere in self.transicoes[self.estado_atual]:
+            self.estado_atual = self.transicoes[self.estado_atual][tipo_caractere]
+        else:
+            st.error(f"Erro: Não há transição válida para o estado {self.estado_atual} com o caractere '{caractere}'.")
+            self.estado_atual = 'q0'  # Reiniciar o estado
+        return self.estado_atual
+
+    def reset(self):
+        """ Reinicia o estado do AFD. """
+        self.estado_atual = 'q0'
+
+# Função para desenhar o autômato finito determinístico (AFD)
+def plotar_afd(afd):
+    grafo_afd = nx.DiGraph()
+
+    # Adicionar nós e transições
+    for estado, transicoes in afd.transicoes.items():
+        grafo_afd.add_node(estado)
+        for entrada, proximo_estado in transicoes.items():
+            grafo_afd.add_edge(estado, proximo_estado, label=entrada)
+
+    pos = nx.spring_layout(grafo_afd)
+
+    # Tamanho maior para a visualização
+    plt.figure(figsize=(10, 7))
+
+    # Destacar estado inicial e finais
+    initial_state = 'q0'
+    final_states = afd.estados_finais
+
+    # Desenhar todos os estados
+    node_colors = []
+    for node in grafo_afd.nodes:
+        if node == initial_state:
+            node_colors.append('green')  # Cor verde para o estado inicial
+        elif node in final_states:
+            node_colors.append('red')  # Cor vermelha para os estados finais
+        else:
+            node_colors.append('lightblue')  # Cor padrão para os outros estados
+
+    nx.draw(grafo_afd, pos, with_labels=True, node_size=2000, node_color=node_colors, font_size=12, font_weight="bold", arrows=True)
+
+    # Desenhar as arestas com rótulos
+    labels = nx.get_edge_attributes(grafo_afd, 'label')
+    nx.draw_networkx_edge_labels(grafo_afd, pos, edge_labels=labels)
+
+    # Exibir a figura no Streamlit
+    st.subheader("Autômato Finito Determinístico (DFA) - Estado Inicial e Estados Finais Destacados")
+    st.pyplot(plt)
+
+
 # Analisador Sintático para Python básico
 def p_program(p):
     '''program : statement_list'''
@@ -165,7 +252,6 @@ def p_error(p):
 parser = yacc.yacc()
 
 # Função para realizar verificações semânticas simples
-
 def check_semantics(statements):
     errors = []
     variables = set()
@@ -175,21 +261,18 @@ def check_semantics(statements):
         for stmt in stmts:
             if isinstance(stmt, tuple):
                 if stmt[0] == 'assign':
-                    # Adiciona a variável à lista de definidas
                     defined_vars.add(stmt[1])
                 elif stmt[0] in ['print', 'if', 'if_else', 'while']:
-                    # Verifica se todas as variáveis usadas estão definidas
                     for expr in traverse_expression(stmt[1]):
                         if expr not in defined_vars and expr not in variables:
                             errors.append(f"Erro semântico: Variável '{expr}' utilizada antes de ser definida.")
                 if stmt[0] == 'if_else':
-                    traverse_statements(stmt[2])  # Parte 'then' do if
-                    traverse_statements(stmt[3])  # Parte 'else' do if
+                    traverse_statements(stmt[2])
+                    traverse_statements(stmt[3])
                 elif stmt[0] == 'while':
-                    traverse_statements(stmt[2])  # Corpo do while
+                    traverse_statements(stmt[2])
 
     def traverse_expression(expr):
-        """ Extrai variáveis usadas em uma expressão """
         vars_in_expr = set()
         if isinstance(expr, tuple):
             if expr[0] in ['PLUS', 'MINUS', 'TIMES', 'DIVIDE', 'LT', 'GT', 'LE', 'GE', 'EQ', 'NE']:
@@ -199,7 +282,7 @@ def check_semantics(statements):
                 vars_in_expr.add(expr[1])
         return vars_in_expr
 
-# Função para construir a árvore sintática como um grafo hierárquico a partir dos tokens
+# Função para construir a árvore sintática como um grafo hierárquico
 def build_syntax_tree(statements):
     graph = nx.DiGraph()
     node_id = 0
@@ -226,12 +309,11 @@ def build_syntax_tree(statements):
 
     return graph
 
-# Função para gerar a posição hierárquica dos nós
-def hierarchy_pos(G, root=None, width=1., vert_gap=0.2, vert_loc=0, xcenter=0.5):
+def hierarchy_pos(G, root=None, width=1., vert_gap=0.5, vert_loc=0, xcenter=0.5):
     pos = _hierarchy_pos(G, root, width, vert_gap, vert_loc, xcenter)
     return pos
 
-def _hierarchy_pos(G, root, width=1., vert_gap=0.2, vert_loc=0, xcenter=0.5, pos=None, parent=None, parsed=None):
+def _hierarchy_pos(G, root, width=1., vert_gap=0.5, vert_loc=0, xcenter=0.5, pos=None, parent=None, parsed=None):
     if pos is None:
         pos = {root: (xcenter, vert_loc)}
     else:
@@ -240,9 +322,6 @@ def _hierarchy_pos(G, root, width=1., vert_gap=0.2, vert_loc=0, xcenter=0.5, pos
         parsed = []
 
     children = list(G.neighbors(root))
-    if not isinstance(G, nx.DiGraph):
-        raise TypeError('G must be a DiGraph')
-
     if len(children) != 0:
         dx = width / len(children) 
         nextx = xcenter - width/2 - dx/2
@@ -254,11 +333,26 @@ def _hierarchy_pos(G, root, width=1., vert_gap=0.2, vert_loc=0, xcenter=0.5, pos
 
 # Função para plotar a árvore sintática
 def plot_tree(graph):
-    pos = hierarchy_pos(graph, 0)  # 0 é o ID da raiz
+    # Ajustar o espaçamento dos nós na árvore para evitar sobreposição
+    pos = hierarchy_pos(graph, 0, width=3., vert_gap=0.8)  # Aumentar o espaçamento
+
     labels = nx.get_node_attributes(graph, 'label')
-    plt.figure(figsize=(14, 10))  # Aumenta o tamanho da figura para melhor visualização
-    nx.draw(graph, pos, labels=labels, with_labels=True, arrows=False, node_size=2000, node_color='lightblue', font_size=12)
+
+    # Aumentar o tamanho da figura e ajustar o espaçamento dos nós
+    plt.figure(figsize=(18, 12))  # Figura maior para melhor visualização
+
+    # Adicionar nós e arestas
+    nx.draw(graph, pos, labels=labels, with_labels=True, arrows=False, node_size=3000, node_color='lightblue', font_size=12)
+
+    # Ajustar os rótulos para que fiquem visíveis e não se sobreponham
+    for node, (x, y) in pos.items():
+        plt.text(x, y, s=labels[node], bbox=dict(facecolor='white', alpha=0.6), horizontalalignment='center', fontsize=10)
+
+    # Exibir a árvore no Streamlit
+    st.subheader("Árvore Sintática")
     st.pyplot(plt)
+
+
 # Função para traduzir a árvore sintática em código Assembly fictício
 def translate_to_assembly(tokens):
     assembly_code = []
@@ -268,7 +362,6 @@ def translate_to_assembly(tokens):
         if token.type == 'PRINT':
             assembly_code.append(f'PRINT {token.value}')
         elif token.type == 'EQUALS':
-            # Assume que a instrução anterior contém o lado esquerdo e a próxima contém o lado direito
             lhs = tokens[tokens.index(token) - 1]
             rhs = tokens[tokens.index(token) + 1]
             assembly_code.append(f'MOV {lhs.value}, {rhs.value}')
@@ -303,13 +396,18 @@ def translate_to_assembly(tokens):
     return assembly_code
 
 # Interface do Streamlit
-st.title("Simulador de Compilador Python para Assembly")
+st.title("Simulador de Compilador Python para Assembly com AFD - CC6NA")
+st.subheader("Professor: Fábio Araújo")
+st.subheader("Monitores: João Renan E Carlos Egger")
 
 # Input do código fonte
 codigo_fonte = st.text_area("Digite um código em Python:")
 
-# Botão para iniciar a compilação/interpretação
-if st.button("Compilar/Interpretar"):
+# Instância do AFD
+afd = AFD()
+
+# Botão para iniciar a compilação/interpretação e o AFD
+if st.button("Compilar/Interpretar com AFD"):
     if codigo_fonte:
         lexer.input(codigo_fonte)
         tokens = []
@@ -319,36 +417,46 @@ if st.button("Compilar/Interpretar"):
                 break
             tokens.append(tok)
 
+        # Resetar o AFD para cada nova análise
+        afd.reset()
+        estados_afd = []
+        for caractere in codigo_fonte:
+            estado = afd.transicao(caractere)
+            if estado:
+                estados_afd.append(estado)
+
+        # Exibir tokens analisados
         st.sidebar.write("Tokens:", [str(t) for t in tokens])
 
+        # Exibir estados percorridos pelo AFD
+        st.sidebar.write("Estados AFD percorridos:", estados_afd)
+
+        # Visualizar o AFD
+        st.sidebar.write("Autômato Finito Determinístico:")
+        plotar_afd(afd)
+
         # Análise sintática
-        result = parser.parse(codigo_fonte, lexer=lexer)
+        resultado = parser.parse(codigo_fonte, lexer=lexer)
 
         # Construção da árvore sintática a partir do resultado da análise sintática
-        syntax_tree = build_syntax_tree(result)
+        arvore_sintatica = build_syntax_tree(resultado)
 
         # Plotagem da árvore sintática
         st.sidebar.write("Árvore Sintática:")
-        plot_tree(syntax_tree)
+        plot_tree(arvore_sintatica)
 
         # Geração e exibição do código Assembly
         st.sidebar.write("Código Assembly:")
-        assembly_code = translate_to_assembly(tokens)
-        st.sidebar.text("\n".join(assembly_code))
+        codigo_assembly = translate_to_assembly(tokens)
+        st.sidebar.text("\n".join(codigo_assembly))
 
         # Verificações semânticas
-        semantic_errors = check_semantics(tokens)
-        if semantic_errors:
+        erros_semanticos = check_semantics(tokens)
+        if erros_semanticos:
             st.sidebar.write("Erros Semânticos:")
-            for error in semantic_errors:
-                st.sidebar.error(error)
+            for erro in erros_semanticos:
+                st.sidebar.error(erro)
         else:
             st.sidebar.write("Nenhum erro semântico encontrado.")
     else:
         st.warning("Por favor, insira um código Python.")
-
-
-
-
-
-
